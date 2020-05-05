@@ -8,6 +8,9 @@ using Microsoft.EntityFrameworkCore;
 using BlindDating.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
+using System.IO;
 
 namespace BlindDating.Controllers
 {
@@ -15,22 +18,50 @@ namespace BlindDating.Controllers
     {
         private readonly BlindDatingContext _context;
         private UserManager<IdentityUser> _userManager;
+        private IHostingEnvironment _webroot;
 
-        public DatingProfilesController(BlindDatingContext context, UserManager<IdentityUser> userManager)
+        public DatingProfilesController(BlindDatingContext context, UserManager<IdentityUser> userManager, IHostingEnvironment webroot)
         {
             _context = context;
             _userManager = userManager;
+            _webroot = webroot;
         }
 
         // GET: DatingProfiles
-        [Authorize]
+        [Authorize(Roles = "Administrator")]
         public async Task<IActionResult> Index()
         {
             return View(await _context.DatingProfile.ToListAsync());
         }
 
+        [Authorize]
+        public async Task<IActionResult> Browse()
+        {
+            return View(await _context.DatingProfile.ToListAsync());
+        }
+
+
         // GET: DatingProfiles/Details/5
+        [Authorize(Roles = "Administrator")]
         public async Task<IActionResult> Details(int? id)
+        {
+            if (id == null)
+            {
+                return NotFound();
+            }
+
+            var datingProfile = await _context.DatingProfile
+                .FirstOrDefaultAsync(m => m.Id == id);
+            if (datingProfile == null)
+            {
+                return NotFound();
+            }
+
+            return View(datingProfile);
+        }
+
+        [Authorize]
+        public async Task<IActionResult> Show(int? id)
         {
             if (id == null)
             {
@@ -58,13 +89,27 @@ namespace BlindDating.Controllers
         // more details see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Create([Bind("Id,FirstName,LastName,Age,Gender,Bio,UserAccountId")] DatingProfile datingProfile)
+        public async Task<IActionResult> Create([Bind("Id,DisplayName,FirstName,LastName,Age,Gender,Bio,UserAccountId")] DatingProfile datingProfile, IFormFile FilePhoto)
         {
+
+            if (FilePhoto.Length > 0)
+            {
+                string photoPath = _webroot.WebRootPath + "\\userPhotos\\";
+                var fileName = Path.GetFileName(FilePhoto.FileName);
+
+            using (var stream = System.IO.File.Create(photoPath + fileName))
+                {
+                    await FilePhoto.CopyToAsync(stream);
+                    datingProfile.PhotoPath = fileName;
+                }
+            }
+
+
             if (ModelState.IsValid)
             {
                 _context.Add(datingProfile);
                 await _context.SaveChangesAsync();
-                return RedirectToAction(nameof(Index));
+                return RedirectToAction(nameof(ProfileInfo));
             }
             return View(datingProfile);
         }
@@ -92,7 +137,7 @@ namespace BlindDating.Controllers
         [HttpPost]
         [ValidateAntiForgeryToken]
         [Authorize(Roles = "Administrator")]
-        public async Task<IActionResult> Edit(int id, [Bind("Id,FirstName,LastName,Age,Gender,Bio,UserAccountId")] DatingProfile datingProfile)
+        public async Task<IActionResult> Edit(int id, [Bind("Id,DisplayName,FirstName,LastName,Age,Gender,Bio,UserAccountId")] DatingProfile datingProfile)
         {
             if (id != datingProfile.Id)
             {
